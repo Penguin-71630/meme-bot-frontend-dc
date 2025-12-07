@@ -1,0 +1,347 @@
+openapi: 3.0.3
+info:
+  title: Discord MemeBot API
+  description: >
+    Go Final Project 後端 API 文件。
+    包含圖片上傳、檢索、Alias 管理以及 Discord OAuth 認證流程。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: 本地開發伺服器
+
+# 定義 Tag 的順序與描述 (讓文件更漂亮)
+tags:
+  - name: Image
+    description: 圖片相關操作 (查詢、上傳、刪除、取得檔案)
+  - name: Alias
+    description: 全域 Alias 列表
+  - name: Linking/Unlinking
+    description: 圖片與 Alias 之間的關聯管理
+  - name: Authentication
+    description: 使用者身分驗證與 Token 交換
+
+# 全域安全驗證
+security:
+  - bearerAuth: []
+
+paths:
+  # ----------------------------------------------------------------
+  # Image (圖片資源)
+  # ----------------------------------------------------------------
+  /api/images:
+    get:
+      tags:
+        - Image
+      summary: 取得圖片列表
+      description: 列出圖片，支援關鍵字搜尋、分頁與無 Alias 過濾。
+      parameters:
+        - name: search
+          in: query
+          description: 搜尋 Alias 關鍵字 (模糊搜尋)
+          schema:
+            type: string
+        - name: null_alias
+          in: query
+          description: 若為 true，只回傳沒有任何 alias 的圖片
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          description: 分頁：每頁幾筆
+          schema:
+            type: integer
+            default: 20
+        - name: page
+          in: query
+          description: 分頁：第幾頁
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: 成功取得列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Image'
+
+    post:
+      tags:
+        - Image
+      summary: 上傳圖片
+      description: 上傳圖片並設定初始 aliases。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                imgfile:
+                  type: string
+                  format: binary
+                  description: 圖片檔案
+                aliases:
+                  type: array
+                  items:
+                    type: string
+                  description: 初始 Alias 列表 (支援重複 key 傳送)
+              required:
+                - imgfile
+      responses:
+        '201':
+          description: 圖片建立成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+
+  /api/images/{id}:
+    get:
+      tags:
+        - Image
+      summary: 取得單張圖片資訊 (Metadata)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+
+    delete:
+      tags:
+        - Image
+      summary: 刪除圖片
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 刪除成功 (No Content)
+
+  /api/images/{id}/file:
+    get:
+      tags:
+        - Image
+      summary: 取得圖片原始檔案 (Binary)
+      description: 用於 <img src="...">
+      security: [] # 若圖片公開可留空
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 圖片串流
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+
+  # ----------------------------------------------------------------
+  # Alias (全域列表)
+  # ----------------------------------------------------------------
+  /api/aliases:
+    get:
+      tags:
+        - Alias
+      summary: 取得所有 Alias
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aliases:
+                    type: array
+                    items:
+                      type: string
+                    example: ["114514", "哼哼啊啊啊啊", "poop"]
+
+  # ----------------------------------------------------------------
+  # Linking/Unlinking (關聯管理)
+  # ----------------------------------------------------------------
+  /api/images/{id}/aliases:
+    post:
+      tags:
+        - Linking/Unlinking
+      summary: 新增單一 Alias (關聯)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                alias:
+                  type: string
+                  example: "先輩"
+      responses:
+        '200':
+          description: 新增成功，回傳更新後的圖片資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+
+    delete:
+      tags:
+        - Linking/Unlinking
+      summary: 刪除單一 Alias (關聯)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: alias
+          in: query
+          description: 要刪除的 alias 文字
+          required: true
+          schema:
+            type: string
+          example: "先輩"
+      responses:
+        '204':
+          description: 刪除成功 (No Content)
+
+    put:
+      tags:
+        - Linking/Unlinking
+      summary: 批次取代 Alias 列表
+      description: 用於前端編輯視窗的 Save 功能，完全取代舊有列表。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aliases:
+                  type: array
+                  items:
+                    type: string
+                  example: ["先輩", "好時代", "114514"]
+      responses:
+        '200':
+          description: 更新成功，回傳更新後的圖片資訊
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+
+  # ----------------------------------------------------------------
+  # Authentication (驗證)
+  # ----------------------------------------------------------------
+  /auth/gen-access-url:
+    post:
+      tags:
+        - Authentication
+      summary: JWT 交換 (Login)
+      description: 使用 Discord OAuth Code 交換 Access Token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: Discord OAuth Code
+                redirect_uri:
+                  type: string
+                grant_type:
+                  type: string
+                  default: authorization_code
+              required:
+                - code
+      responses:
+        '200':
+          description: 登入成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: "Bearer"
+                  expires_in:
+                    type: integer
+                    example: 3600
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "101"
+        uploaded_user_id:
+          type: string
+          example: "konchin.shih"
+        uploaded_at:
+          type: string
+          format: date-time
+          example: "2023-10-20T12:00:00Z"
+        aliases:
+          type: array
+          items:
+            type: string
+          example: ["野獸", "先輩", "114514"]
+        url:
+          type: string
+          description: 圖片二進制檔案的 API 路徑
+          example: "/api/images/101/file"

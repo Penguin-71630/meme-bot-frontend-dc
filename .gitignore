@@ -1,0 +1,47 @@
+.DS_Store
+
+################################
+# Node.js/React (web/) 專屬
+################################
+# 忽略所有 node_modules 資料夾
+node_modules
+# 忽略 npm 快取和日誌
+npm-debug.log*
+.yarn-integrity
+.pnp.*
+
+# 忽略打包後的產物
+web/dist
+web/build
+
+
+################################
+# Go (server/ & bot/) 專屬
+################################
+# 忽略 Go 專案生成的執行檔
+*.exe
+*.dll
+*.so
+# 忽略跨平台編譯的產物
+server/bin/
+bot/bin/
+# 忽略測試快取
+*.test
+*.out
+
+
+################################
+# IDE/OS/Config 專屬
+################################
+# VS Code (常見)
+.vscode/
+
+# JetBrains (GoLand/WebStorm)
+.idea/
+
+# macOS 專屬檔案
+.DS_Store
+
+# 環境變數與機敏檔案 (重要！)
+.env
+.env.local
