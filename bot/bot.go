@@ -18,7 +18,6 @@ type Bot struct {
 type Config struct {
 	Token     string
 	APIClient *api.Client
-	Prefix    string
 }
 
 func New(cfg *config.Config) (*Bot, error) {
@@ -37,31 +36,85 @@ func New(cfg *config.Config) (*Bot, error) {
 		config: &Config{
 			Token:     cfg.DiscordToken,
 			APIClient: apiClient,
-			Prefix:    cfg.BotPrefix,
 		},
 	}
 
 	// Register handlers
 	bot.registerHandlers()
 
-	// Set intents
+	// Set intents - only need guild messages for the ciallo listener
 	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
 
 	return bot, nil
 }
 
+func (b *Bot) registerSlashCommands() error {
+	commands := []*discordgo.ApplicationCommand{
+		{
+			Name:        "ping",
+			Description: "Check if bot is responsive",
+		},
+		{
+			Name:        "greet",
+			Description: "Get a friendly greeting",
+		},
+		{
+			Name:        "echo",
+			Description: "Bot repeats what you say",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "message",
+					Description: "Message to echo",
+					Required:    true,
+				},
+			},
+		},
+	}
+
+	for _, cmd := range commands {
+		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", cmd)
+		if err != nil {
+			return fmt.Errorf("cannot create command %s: %w", cmd.Name, err)
+		}
+	}
+
+	return nil
+}
+
 func (b *Bot) registerHandlers() {
 	b.session.AddHandler(b.onReady)
 	b.session.AddHandler(b.onMessageCreate)
+	b.session.AddHandler(b.onInteractionCreate)
 }
 
 func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
 	log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 
+	// Register slash commands
+	if err := b.registerSlashCommands(); err != nil {
+		log.Printf("Error registering slash commands: %v", err)
+	}
+
 	// Set bot status
-	err := s.UpdateGameStatus(0, fmt.Sprintf("%shelp for commands", b.config.Prefix))
+	err := s.UpdateGameStatus(0, "/ping to check status")
 	if err != nil {
 		log.Printf("Error setting status: %v", err)
+	}
+}
+
+func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+
+	switch i.ApplicationCommandData().Name {
+	case "ping":
+		b.handleSlashPing(s, i)
+	case "greet":
+		b.handleSlashGreet(s, i)
+	case "echo":
+		b.handleSlashEcho(s, i)
 	}
 }
 

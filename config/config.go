@@ -8,7 +8,6 @@ import (
 type Config struct {
 	DiscordToken string
 	APIBaseURL   string
-	BotPrefix    string
 }
 
 func Load() (*Config, error) {
@@ -22,14 +21,8 @@ func Load() (*Config, error) {
 		apiURL = "http://localhost:8080" // Default
 	}
 
-	prefix := os.Getenv("BOT_PREFIX")
-	if prefix == "" {
-		prefix = "!" // Default prefix
-	}
-
 	return &Config{
 		DiscordToken: token,
 		APIBaseURL:   apiURL,
-		BotPrefix:    prefix,
 	}, nil
 }
