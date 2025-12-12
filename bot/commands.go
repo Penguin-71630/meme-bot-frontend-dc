@@ -69,3 +69,33 @@ func (b *Bot) handleSlashEcho(s *discordgo.Session, i *discordgo.InteractionCrea
 		},
 	})
 }
+
+func (b *Bot) handleSlashWeb(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	var userID string
+	if i.Member != nil {
+		userID = i.Member.User.ID
+	} else if i.User != nil {
+		userID = i.User.ID
+	}
+
+	// Call backend API
+	loginURL, err := b.apiClient.GenerateLoginURL(userID)
+	if err != nil {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Failed to generate login URL: " + err.Error(),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("🔗 **Click here to access the web page:**\n%s\n\n", loginURL),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+}

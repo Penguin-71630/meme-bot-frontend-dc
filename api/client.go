@@ -31,6 +31,14 @@ type AliasesResponse struct {
 	Aliases []string `json:"aliases"`
 }
 
+type GenLoginURLRequest struct {
+	UserID string `json:"userId"`
+}
+
+type GenLoginURLResponse struct {
+	LoginURL string `json:"loginUrl"`
+}
+
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -215,4 +223,42 @@ func (c *Client) GetImageFile(id string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+func (c *Client) GenerateLoginURL(userID string) (string, error) {
+	url := fmt.Sprintf("%s/auth/gen-login-url", c.baseURL)
+
+	reqBody := GenLoginURLRequest{UserID: userID}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// TODO: Set preshared key authorization
+	req.Header.Set("Authorization", "Bearer poop")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result GenLoginURLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	return result.LoginURL, nil
 }

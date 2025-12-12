@@ -48,7 +48,7 @@ func New(cfg *config.Config) (*Bot, error) {
 	return bot, nil
 }
 
-func (b *Bot) registerSlashCommands() error {
+func (b *Bot) registerSlashCommands(guildID string) error {
 	commands := []*discordgo.ApplicationCommand{
 		{
 			Name:        "ping",
@@ -70,15 +70,34 @@ func (b *Bot) registerSlashCommands() error {
 				},
 			},
 		},
+		{
+			Name:        "web",
+			Description: "Get a login link to the web interface",
+		},
 	}
 
 	for _, cmd := range commands {
-		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", cmd)
+		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, guildID, cmd)
 		if err != nil {
 			return fmt.Errorf("cannot create command %s: %w", cmd.Name, err)
 		}
 	}
 
+	return nil
+}
+
+func (b *Bot) clearSlashCommands(guildID string) error {
+	commands, err := b.session.ApplicationCommands(b.session.State.User.ID, guildID)
+	if err != nil {
+		return err
+	}
+
+	for _, cmd := range commands {
+		err := b.session.ApplicationCommandDelete(b.session.State.User.ID, guildID, cmd.ID)
+		if err != nil {
+			log.Printf("Failed to delete command %s: %v", cmd.Name, err)
+		}
+	}
 	return nil
 }
 
@@ -91,8 +110,17 @@ func (b *Bot) registerHandlers() {
 func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
 	log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 
+	// For development: set your guild ID here for instant updates
+	// For production: use "" for global commands
+	guildID := "1377176828833169468" // Replace with your Discord server ID for faster testing
+
+	// clear slash commands
+	if err := b.clearSlashCommands(guildID); err != nil {
+		log.Printf("Error clearing slash commands: %v", err)
+	}
+
 	// Register slash commands
-	if err := b.registerSlashCommands(); err != nil {
+	if err := b.registerSlashCommands(guildID); err != nil {
 		log.Printf("Error registering slash commands: %v", err)
 	}
 
@@ -115,6 +143,8 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 		b.handleSlashGreet(s, i)
 	case "echo":
 		b.handleSlashEcho(s, i)
+	case "web":
+		b.handleSlashWeb(s, i)
 	}
 }
 
