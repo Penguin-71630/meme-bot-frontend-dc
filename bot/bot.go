@@ -1,85 +1,81 @@
 package bot
 
 import (
-	"fmt"
+	"context"
 	"log"
 
 	"github.com/Penguin-71630/meme-bot-frontend-dc/api"
-	"github.com/Penguin-71630/meme-bot-frontend-dc/config"
+	"github.com/Penguin-71630/meme-bot-frontend-dc/tracing"
 	"github.com/bwmarrin/discordgo"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
+
+var commands = []*discordgo.ApplicationCommand{
+	{
+		Name:        "ping",
+		Description: "Check if bot is responsive",
+	},
+	{
+		Name:        "greet",
+		Description: "Get a friendly greeting",
+	},
+	{
+		Name:        "echo",
+		Description: "Bot repeats what you say",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "message",
+				Description: "Message to echo",
+				Required:    true,
+			},
+		},
+	},
+	{
+		Name:        "web",
+		Description: "Get a login link to the web interface",
+	},
+}
 
 type Bot struct {
 	session   *discordgo.Session
-	config    *Config
 	apiClient *api.Client
 }
 
-type Config struct {
-	Token     string
-	APIClient *api.Client
-}
-
-func New(cfg *config.Config) (*Bot, error) {
+func New() (*Bot, error) {
 	// Create Discord session
-	session, err := discordgo.New("Bot " + cfg.DiscordToken)
+	session, err := discordgo.New("Bot " + viper.GetString("discord-bot-token"))
 	if err != nil {
-		return nil, fmt.Errorf("error creating Discord session: %w", err)
+		return nil, err
 	}
-
-	// Create API client
-	apiClient := api.NewClient(cfg.APIBaseURL)
 
 	bot := &Bot{
 		session:   session,
-		apiClient: apiClient,
-		config: &Config{
-			Token:     cfg.DiscordToken,
-			APIClient: apiClient,
-		},
+		apiClient: api.NewClient(),
 	}
 
 	// Register handlers
 	bot.registerHandlers()
 
 	// Set intents - only need guild messages for the ciallo listener
-	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
+	session.Identify.Intents = discordgo.IntentsGuildMessages |
+		discordgo.IntentsDirectMessages |
+		discordgo.IntentsMessageContent
 
 	return bot, nil
 }
 
-func (b *Bot) registerSlashCommands(guildID string) error {
-	commands := []*discordgo.ApplicationCommand{
-		{
-			Name:        "ping",
-			Description: "Check if bot is responsive",
-		},
-		{
-			Name:        "greet",
-			Description: "Get a friendly greeting",
-		},
-		{
-			Name:        "echo",
-			Description: "Bot repeats what you say",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "message",
-					Description: "Message to echo",
-					Required:    true,
-				},
-			},
-		},
-		{
-			Name:        "web",
-			Description: "Get a login link to the web interface",
-		},
-	}
-
+func (b *Bot) registerSlashCommands(ctx context.Context) error {
 	for _, cmd := range commands {
-		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, guildID, cmd)
+		_, err := b.session.ApplicationCommandCreate(
+			b.session.State.User.ID, "", cmd)
 		if err != nil {
-			return fmt.Errorf("cannot create command %s: %w", cmd.Name, err)
+			tracing.Logger.Ctx(ctx).
+				Error("failed to create command",
+					zap.String("command", cmd.Name),
+					zap.Error(err))
+			return err
 		}
 	}
 
@@ -107,8 +103,15 @@ func (b *Bot) registerHandlers() {
 	b.session.AddHandler(b.onInteractionCreate)
 }
 
-func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
-	log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
+func (b *Bot) onReady(
+	s *discordgo.Session,
+	event *discordgo.Ready,
+) {
+	ctx := context.Background()
+	tracing.Logger.Ctx(ctx).
+		Info("logged in",
+			zap.String("username", s.State.User.Username),
+			zap.String("discriminator", s.State.User.Discriminator))
 
 	// For development: set your guild ID here for instant updates
 	// For production: use "" for global commands
@@ -120,18 +123,27 @@ func (b *Bot) onReady(s *discordgo.Session, event *discordgo.Ready) {
 	}
 
 	// Register slash commands
-	if err := b.registerSlashCommands(guildID); err != nil {
-		log.Printf("Error registering slash commands: %v", err)
+	if err := b.registerSlashCommands(ctx); err != nil {
+		tracing.Logger.Ctx(ctx).
+			Error("failed to register slash commands",
+				zap.Error(err))
+		return
 	}
 
 	// Set bot status
 	err := s.UpdateGameStatus(0, "/ping to check status")
 	if err != nil {
-		log.Printf("Error setting status: %v", err)
+		tracing.Logger.Ctx(ctx).
+			Error("failed to set status",
+				zap.Error(err))
+		return
 	}
 }
 
-func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (b *Bot) onInteractionCreate(
+	s *discordgo.Session,
+	i *discordgo.InteractionCreate,
+) {
 	if i.Type != discordgo.InteractionApplicationCommand {
 		return
 	}
@@ -149,10 +161,7 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 }
 
 func (b *Bot) Start() error {
-	if err := b.session.Open(); err != nil {
-		return fmt.Errorf("error opening connection: %w", err)
-	}
-	return nil
+	return b.session.Open()
 }
 
 func (b *Bot) Stop() {
